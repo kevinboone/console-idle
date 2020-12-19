@@ -1,0 +1,228 @@
+.\" Copyright (C) 2020 Kevin Boone 
+.\" Permission is granted to any individual or institution to use, copy, or
+.\" redistribute this software so long as all of the original files are
+.\" included, that it is not sold for profit, and that this copyright notice
+.\" is retained.
+.\"
+.TH console-idle 1 "December 2020"
+
+.SH NAME
+console-idle -- screen-saver manager for the Linux framebuffer console 
+
+.SH SYNOPSIS
+.B console-idle\ [options]\ --\ command\ args...
+.PP
+
+Note the double-dash (--) between the arguments to \fIconsole-idle\fR and
+the command to be executed. Without this, arguments to the command will
+be interpreted as arguments to \fIconsole-idle\fR.
+
+.SH DESCRIPTION
+
+\fIconsole-idle\fR is a simple utility that provides screen-saver or
+standby functionality for Linux framebuffer consoles. Normally, 
+when a framebuffer console is in use, only screen blanking is possible,
+and even that is not enabled by default on modern systems.  
+\fIconsole-idle\fR allows any custom program, that outputs 
+to the framebuffer, to run when the system appears to be idle. 
+This can be a screen-saver, or a program that displays 
+general information, or anything else.
+
+\fIconsole-idle\fR has a narrow range of applications. It is intended
+for minimal and embedded Linux systems that offer a terminal 
+interface. It doesn't work with X -- but there's no need for it,
+because X has its own screen-saver implementation.  
+
+\fIconsole-idle\fR runs quietly in the background, and monitors selected
+input devices for activity. After a certain period of inactivity, it
+starts a user-selected screen-saver program, which is expected to 
+draw the screen. 
+When further activity is detected, \fIconsole-idle\fR restores the
+framebuffer and sends a TERM signal to the screen-saver program it launched.
+
+\fIconsole-idle\fR should be compatible with terminal-mode programs 
+that use \fIcurses\fR and similar frameworks to produce complex 
+layout. 
+
+.SH EXAMPLE
+
+console-idle \\
+  --dev /dev/input/event0 --dev=/dev/input/mice \\
+  -timeout 60 \\
+  -- jpegtofb --sleep 60 --landscape \\
+  --randomize /photos/*.jpg 
+ 
+Invoke \fIjpegtofb\fR to provide a slideshow screen-saver whenever the
+selected input devices have been idle for more than two minutes.
+
+In this example, /dev/input/mice is the standard mouse device, and
+/dev/input/event0 is the keyboard. There's no automated way for 
+\fIconsole-idle\fR to determine which devices to monitor -- see
+discussion of this point below.
+
+.SH "OPTIONS"
+
+.TP
+.BI -d,\-\-device
+.LP
+An input device such as /dev/input/event1 or /dev/input/mice. Many 
+devices can be watched at the same time. The utility generates no
+discernable CPU load, however many devices are monitored. \fIconsole-idle\fR
+must be run as a user with permissions to read the selected devices.
+
+.TP
+.BI -D,\-\-debug
+.LP
+
+In debug mode, \fIconsole-idle\fR can be run in the foreground in
+a terminal session, and verbose logging can be enabled. Logging
+is to stderr. Otherwise,
+\fIconsole-idle\fR detaches from any controlling terminal, and 
+logs to the system logger.
+
+.TP
+.BI -f,\-\-fbdev
+.LP
+Framebuffer device; defaults to /dev/fb0. \fIconsole-idle\fR needs
+read and write access to the framebuffer, so it can restore the original
+screen contents when activity is detected. \fIconsole-idle\fR saves and
+restores the framebuffer so that the screen-saver program it launches 
+does not have to be able to. 
+
+
+.TP
+.BI -t,\-\-timeout
+.LP
+
+The time in seconds that \fIconsole-idle\fR will wait for input activity,
+before launching the screen-saver program. 
+The default is 120 seconds, or two minutes.
+
+.TP
+.BI -l,\-\-log-level
+.LP
+
+A number representing the verbosity of logging, from 0 (fatal errors
+only) to 4 (function call tracing). Since \fIconsole-idle\fR is not
+designed to be run in a user session, low-level (severe) messages are
+written to the system log, unless running in debug mode. Consequently,
+setting a log level greater than 2 has no effect except in debug 
+mode.
+
+
+.SH PERMISSIONS ISSUES
+
+\fIconsole-idle\fR requires a number of elevated privileges --
+on the terminal device, framebuffer device, and input devices. 
+It would be very difficult to make it run other than as root. 
+Most likely the same is true of any screen-saver program it runs,
+so \fIconsole-idle\fR does not attempt to change its user ID when
+launching the screen-saver program. 
+
+To run a screen-saver program as an unprivileged user, have
+\fIconsole-idle\fR run a shell that uses \fIsu\fR to switch
+users.
+
+.SH DEVICE SELECTION
+
+Typical devices to monitor include those for the mouse, 
+keyboard, and touchscreen. These devices
+usually have entries in /dev/input that can be polled without stealing
+data from other applications. However, there's no systematic way that
+the utility can work out which devices to monitor -- this may require
+some trial-and-error. Doing "hexdump /dev/input/eventNN" will usually
+reveal which devices respond to which kinds of input. It's possible,
+and probably necessary, to monitor a number of different devices.
+
+.SH LIMITATIONS 
+
+\fIconsole-idle\fR has no way to know whether the screen-saver
+program it is told to launch will work, or even exist. It is the 
+user's responsibility to ensure that the path of the screen-saver
+program, and any arguments it takes, are correct.
+
+The screen-saver program launched by \fIconsole-idle\fR must run in the
+foreground, and be capable of being stopped by the receipt of
+a TERM signal. 
+
+The screen-saver program must produce no further output to the
+framebuffer after the TERM signal is received. It should shut
+down reasonably quickly -- certainly before the system becomes
+idle again. However, so long as it doesn't produce output after being
+signalled, it doesn't have to stop immediately.
+
+The screen-saver program need not save or restore the screen contents
+-- \fIconsole-idle\fR will do this. However, \fIconsole-idle\fR 
+does not clear the screen when it launches a program -- it assumes
+that the screen-saver program will draw the whole screen (or, at least,
+blank the unused screen areas).
+
+\fIconsole-idle\fR uses an ioctl() call to disable text output from 
+the Linux console when it launches the screen-saver program. However,
+it can't prevent output from another program that writes directly to the 
+framebuffer. Outside of the X environment, most graphical programs
+do write directly to the framebuffer. The screen-saver program launched
+by \fIconsole-idle\fR will overwrite whatever happens to be on the
+screen, however it was generated. However, if a program is running
+that continues to write to the framebuffer in the absence of user
+input, then there will be two programs competing for the framebuffer.
+The results are likely to be unsightly, at best.
+If a console program does produce
+complex terminal output in the absence of user input, there is
+always an outside chance
+that the screen-saver will switch on or off mid-way through a 
+sequence of control characters. 
+Because 
+`console-idle` disables terminal character output when the 
+screen-saver is running, multi-character sequences could potentially 
+be truncated.
+The results are likely to be decidedly
+odd if this happens, but it can only happen when running a program that
+produces output without user input.
+
+When \fIconsole-idle\fR shuts down -- which it will only do when
+sent a signal -- it tries to leave the screen as it found it. 
+That is, it tries to restore the screen contents if a screen-saver program
+is running, and to enable the console cursor if it disabled it.
+This process might take a second or so.
+
+\fIconsole-idle\fR can only monitor input devices that work with the
+poll() system call, and which can have their activity status
+reset by reading them. In practice, all Linux raw
+input devices with entries in /dev/input are of this type. 
+Terminal devices like /dev/tty are not. 
+
+\fIconsole-idle\fR can't "remove" keyboard or mouse input from the input
+buffer -- it monitors raw devices, not any particular terminal's
+input buffer. So whatever keystroke or mouse movement caused the 
+screen-saver to quit will become available to a program that is waiting
+for input. 
+
+\fIconsole-idle\fR only works with 24 bits-per-pixel, linear framebuffers.
+The great majority of Linux framebuffers are of this type, but not
+all of them.
+
+It should go without saying that \fIconsole-idle\fR will be neither
+functional, nor remotely necessary, with an X desktop.
+
+.SH NOTES
+
+\fIconsole-idle\fR uses execvp() to launch the screen-saver
+program. This means that the specified program will be searched 
+for in the usual
+locations and the directories specified by $PATH. The screen-saver
+program will have the same environment as the \fIconsole-idle\fR program. 
+
+To disable output from the console terminal, \fIconsole-idle\fR uses
+an ioctl() call to set the terminal to "graphics" mode. Ordinary
+console text output is completely ignored in "graphics" mode, and
+the regular console cursor is hidden.
+
+.SH RETURN VALUE
+
+In normal operation, \fIconsole-idle\fR does not return. However, 
+if it shuts down cleanly in response to a signal, the exit status
+is zero. If it fails to start for any reason, the exit status
+is -1.
+
+.\" end of file
